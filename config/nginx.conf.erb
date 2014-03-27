@@ -1,6 +1,8 @@
 daemon off;
 worker_processes <%= ENV['NGINX_WORKERS'] %>;
 
+error_log stderr;
+
 events {
     use epoll;
     accept_mutex on;
@@ -14,9 +16,9 @@ http {
     gzip_min_length 512;
     <% end %>
 
+    # Heroku denies access to /dev/stdout and /dev/stderr
     log_format l2met 'measure#nginx.service=$request_time request_id=$http_x_request_id';
-    access_log /dev/stdout l2met;
-    error_log /dev/stdout;
+    access_log error l2met;
 
     include mime.types;
     default_type application/octet-stream;
@@ -26,7 +28,7 @@ http {
     client_max_body_size 10M;
 
     upstream app_server {
-        server <% ENV['NGINX_SOCKET'] %> fail_timeout=0;
+        server <%= ENV['NGINX_SOCKET'] %> fail_timeout=0;
     }
 
     server {
@@ -42,5 +44,5 @@ http {
         }
     }
 
-    include config/nginx-local.conf
+    include config/nginx-local*.conf;
 }

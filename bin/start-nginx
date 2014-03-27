@@ -36,6 +36,11 @@ run-nginx() {
         at app-initialized
     fi
 
+    # XXX Hack because Heroku denies /dev/stdout
+    mkdir -p logs/nginx
+    touch logs/nginx/{access,error}.log
+    ( trap '' SIGTERM; tail -n0 -f logs/nginx/{access,error}.log ) &
+
     # Start NGINX. SIGQUIT for graceful shutdown.
     aux-start nginx SIGQUIT bin/nginx -p "$PWD" -c config/nginx.conf
 
