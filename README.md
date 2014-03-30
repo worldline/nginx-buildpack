@@ -100,9 +100,12 @@ This instructs NGINX to send the error log to stderr (this is provided by NGINX 
 Examples
 --------
 
-### Existing Ruby/Unicorn App
+### Ruby/Unicorn
 
-Update Buildpacks
+#### Update Buildpacks
+
+Use [heroku-buildpack-multii](https://github.com/agriffis/heroku-buildpack-multii) to load nginx-buildpack in addition to the Ruby buildpack.
+
 ```bash
 $ heroku config:set BUILDPACK_URL=https://github.com/agriffis/heroku-buildpack-multii.git
 $ echo 'https://github.com/agriffis/nginx-buildpack.git' >> .buildpacks
@@ -110,75 +113,56 @@ $ echo 'https://codon-buildpacks.s3.amazonaws.com/buildpacks/heroku/ruby.tgz' >>
 $ git add .buildpacks
 $ git commit -m 'Add multi-buildpack'
 ```
-Update Procfile:
-```
-web: bin/start-nginx bundle exec unicorn -c config/unicorn.rb
-```
-```bash
-$ git add Procfile
-$ git commit -m 'Update Procfile for NGINX buildpack'
-```
-Update Unicorn Config
+
+#### Update Unicorn Config
+
+Listen on `ENV['PORT']` which will be the UNIX domain socket when running under NGINX.
+
 ```ruby
-require 'fileutils'
 listen ENV['PORT']
 ```
-```bash
-$ git add config/unicorn.rb
-$ git commit -m 'Update unicorn config to listen on NGINX socket.'
-```
-Deploy Changes
-```bash
-$ git push heroku master
-```
 
-### New Ruby/Unicorn App
+#### Update Procfile
 
-```bash
-$ mkdir myapp; cd myapp
-$ git init
-```
+Prefix your server with `bin/start-nginx`.
 
-**Gemfile**
-```ruby
-source 'https://rubygems.org'
-gem 'unicorn'
-```
-
-**config.ru**
-```ruby
-run Proc.new {[200,{'Content-Type' => 'text/plain'}, ["hello world"]]}
-```
-
-**config/unicorn.rb**
-```ruby
-require 'fileutils'
-preload_app true
-timeout 5
-worker_processes 4
-listen ENV['PORT'], backlog: 1024
-```
-Install Gems
-```bash
-$ bundle install
-```
-Create Procfile
 ```
 web: bin/start-nginx bundle exec unicorn -c config/unicorn.rb
 ```
-Create & Push Heroku App:
+
+### Python/Gunicorn
+
+#### Update Buildpacks
+
+Use [heroku-buildpack-multii](https://github.com/agriffis/heroku-buildpack-multii) to load nginx-buildpack in addition to the Python buildpack.
+
 ```bash
-$ heroku create --buildpack https://github.com/agriffis/heroku-buildpack-multii.git
-$ echo 'https://codon-buildpacks.s3.amazonaws.com/buildpacks/heroku/ruby.tgz' >> .buildpacks
+$ heroku config:set BUILDPACK_URL=https://github.com/agriffis/heroku-buildpack-multii.git
 $ echo 'https://github.com/agriffis/nginx-buildpack.git' >> .buildpacks
-$ git add .
-$ git commit -am "init"
-$ git push heroku master
-$ heroku logs -t
+$ echo 'https://github.com/heroku/heroku-buildpack-python.git' >> .buildpacks
+$ git add .buildpacks
+$ git commit -m 'Add multi-buildpack'
 ```
-Visit App
+
+#### Update Gunicorn Config
+
+Check for the UNIX domain socket and prefix with `unix:` for Gunicorn in `config/gunicorn.py`.
+
+```python
+import os
+
+bind = os.environ['PORT']
+
+if bind.startswith('/'):
+    bind = 'unix:' + bind
 ```
-$ heroku open
+
+#### Update Procfile
+
+Prefix your server with `bin/start-nginx`.
+
+```
+web: bin/start-nginx gunicorn -c config/gunicorn.py
 ```
 
 License
