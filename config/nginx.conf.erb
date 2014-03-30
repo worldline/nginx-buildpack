@@ -16,7 +16,6 @@ http {
     gzip_min_length 512;
     <% end %>
 
-    # Heroku denies access to /dev/stdout and /dev/stderr
     log_format l2met 'measure#nginx.service=$request_time request_id=$http_x_request_id';
     access_log error l2met;
 
