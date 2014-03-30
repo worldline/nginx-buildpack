@@ -21,10 +21,10 @@ main() {
     fi
 
     if [[ "$cached_version" != "$NGINX_VERSION" ]]; then
-        at build-nginx version=$NGINX_VERSION
+        announce "Building NGINX $NGINX_VERSION"
         build-nginx $CACHE_DIR
     else
-        at cached-nginx version=$NGINX_VERSION
+        announce "Using cached NGINX $NGINX_VERSION"
     fi
 
     install $CACHE_DIR/sbin/nginx bin/nginx
@@ -85,7 +85,7 @@ build-nginx() {
 
 cond-install() {
     if [[ -e $BUILD_DIR/$2 ]]; then
-        at cond-install custom=$2
+        announce "Found custom $2"
     else
         install "$1" "$2"
     fi
@@ -93,7 +93,7 @@ cond-install() {
 
 install() {
     mkdir -p "$BUILD_DIR/$(dirname $2)"
-    at install file=$2
+    announce "Installing $2"
     cp -a "$1" "$BUILD_DIR/$(dirname $2)/"
 }
 
@@ -101,8 +101,8 @@ set-indent() {
     exec &> >(sed -u 's/^/       /')
 }
 
-at() {
-    echo "-----> nginx-buildpack: at=$*"
+announce() {
+    echo "-----> nginx-buildpack: $*"
 }
 
 is-enabled() {
