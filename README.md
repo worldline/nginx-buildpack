@@ -3,24 +3,9 @@ Heroku Buildpack: NGINX
 
 Nginx-buildpack vendors NGINX inside a dyno and connects NGINX to an app server via UNIX domain sockets.
 
-## Motivation
+This buildpack forks [Ryan Smith's excellent buildpack](https://github.com/ryandotsmith/nginx-buildpack) and maintains his feature list:
 
-Some application servers (e.g. Ruby's Unicorn) halt progress when dealing with network I/O. Heroku's Cedar routing stack [buffers only the headers](https://devcenter.heroku.com/articles/http-routing#request-buffering) of inbound requests. (The Cedar router will buffer the headers and body of a response up to 1MB) Thus, the Heroku router engages the dyno during the entire body transfer –from the client to dyno. For applications servers with blocking I/O, the latency per request will be degraded by the content transfer. By using NGINX in front of the application server, we can eliminate a great deal of transfer time from the application server. In addition to making request body transfers more efficient, all other I/O should be improved since the application server need only communicate with a UNIX socket on localhost. Basically, for webservers that are not designed for efficient, non-blocking I/O, we will benefit from having NGINX to handle all I/O operations.
-
-## Versions
-
-* Buildpack Version: 0.4
-* NGINX Version: 1.5.7
-
-## Requirements
-
-* Your webserver listens to the socket at `/tmp/nginx.socket`.
-* You touch `/tmp/app-initialized` when you are ready for traffic.
-* You can start your web server with a shell command.
-
-## Features
-
-* Unified NXNG/App Server logs.
+* Unified NGINX/App Server logs.
 * [L2met](https://github.com/ryandotsmith/l2met) friendly NGINX log format.
 * [Heroku request ids](https://devcenter.heroku.com/articles/http-request-id) embedded in NGINX logs.
 * Crashes dyno if NGINX or App server crashes. Safety first.
@@ -28,7 +13,30 @@ Some application servers (e.g. Ruby's Unicorn) halt progress when dealing with n
 * Customizable NGINX config.
 * Application coordinated dyno starts.
 
-### Logging
+However there are some significant differences:
+
+* NGINX is built during initial deployment, rather than using a prebuilt binary. The binary is cached between deploys.
+* NGINX logs are sent directly to stderr rather than to the filesystem. This results in faster log delivery to Heroku logplex, and doesn't gradually fill the filesystem.
+* Signals are handled gracefully by the wrapper script, allowing both the app and NGINX to stop properly on dyno shutdown.
+* `PORT` is overridden to refer to the UNIX domain socket, so the application can detect whether it's running under NGINX or directly. This is especially because NGINX can be enabled or disabled at run-time by toggling `NGINX_ENABLED`.
+
+Versions
+--------
+
+* [NGINX](http://nginx.org/) 1.5.12
+* [PCRE](http://sourceforge.net/projects/pcre/) 8.34
+* [ngx_headers_more](https://github.com/agentzh/headers-more-nginx-module) 0.25
+
+These versions are tunable by setting `NGINX_VERSION`, `NGINX_PCRE_VERSION` and `NGINX_HEADERS_MORE_VERSION` in the app config, so you can update even if the buildpack hasn't bee updated yet.
+
+Requirements
+------------
+
+* Your webserver listens to the socket at `/tmp/nginx.socket`.
+* You can start your web server with a shell command.
+
+Logging
+-------
 
 NGINX will output the following style of logs:
 
@@ -42,7 +50,8 @@ You can correlate this id with your Heroku router logs:
 at=info method=GET path=/ host=salty-earth-7125.herokuapp.com request_id=e2c79e86b3260b9c703756ec93f8a66d fwd="67.180.77.184" dyno=web.1 connect=1ms service=8ms status=200 bytes=21
 ```
 
-### Language/App Server Agnostic
+Language/App Server Agnostic
+----------------------------
 
 Nginx-buildpack provides a command named `bin/start-nginx` this command takes another command as an argument. You must pass your app server's startup command to `start-nginx`.
 
@@ -53,10 +62,13 @@ $ cat Procfile
 web: bin/start-nginx bundle exec unicorn -c config/unicorn.rb
 ```
 
+### Application/Dyno coordination
+
+The buildpack will not start NGINX until the application is listening on `/tmp/nginx-socket`. Since NGINX binds to the dyno's `PORT` and since the `PORT` determines if the app can receive traffic, you can delay NGINX accepting traffic until your application is ready to handle it. The examples below show how/when you should write the file when working with Unicorn.
+
 ### Setting the Worker Processes
 
-You can configure NGINX's `worker_processes` directive via the
-`NGINX_WORKERS` environment variable.
+You can configure NGINX's `worker_processes` directive via the `NGINX_WORKERS` environment variable.
 
 For example, to set your `NGINX_WORKERS` to 8 on a PX dyno:
 
@@ -64,28 +76,36 @@ For example, to set your `NGINX_WORKERS` to 8 on a PX dyno:
 $ heroku config:set NGINX_WORKERS=8
 ```
 
-### Customizable NGINX Config
+Customizable NGINX Config
+-------------------------
 
-You can provide your own NGINX config by creating a file named `nginx.conf.erb` in the config directory of your app. Start by copying the buildpack's [default config file](https://github.com/ryandotsmith/nginx-buildpack/blob/master/config/nginx.conf.erb).
+You can provide your own NGINX config by creating a file named `config/nginx.conf.erb` in your app. Start by copying the buildpack's [default config file](https://raw.githubusercontent.com/agriffis/nginx-buildpack/develop/config/nginx.conf.erb).
 
-### Customizable NGINX Compile Options
+Alternatively, if you like the defaults, you can add a file `config/nginx-local.conf` and it will be included automatically.
 
-See [scripts/build_nginx.sh](scripts/build_nginx.sh) for the build steps. Configuring is as easy as changing the "./configure" options.
+### Patched Logging
 
-### Application/Dyno coordination
+This buildpack patches NGINX to send the access log directly to stderr, which is not a feature NGINX provides normally. If you override the default config and want to make use of this logging feature, use the following:
 
-The buildpack will not start NGINX until a file has been written to `/tmp/app-initialized`. Since NGINX binds to the dyno's $PORT and since the $PORT determines if the app can receive traffic, you can delay NGINX accepting traffic until your application is ready to handle it. The examples below show how/when you should write the file when working with Unicorn.
+```
+error_log stderr;
 
-## Setup
+http {
+    access_log error;
+}
+```
 
-Here are 2 setup examples. One example for a new app, another for an existing app. In both cases, we are working with ruby & unicorn. Keep in mind that this buildpack is not ruby specific.
+This instructs NGINX to send the error log to stderr (this is provided by NGINX upstream) and then to send the access log to the error log output (this is provided by the patch).
 
-### Existing App
+Examples
+--------
+
+### Existing Ruby/Unicorn App
 
 Update Buildpacks
 ```bash
-$ heroku config:set BUILDPACK_URL=https://github.com/ddollar/heroku-buildpack-multi.git
-$ echo 'https://github.com/ryandotsmith/nginx-buildpack.git' >> .buildpacks
+$ heroku config:set BUILDPACK_URL=https://github.com/agriffis/heroku-buildpack-multii.git
+$ echo 'https://github.com/agriffis/nginx-buildpack.git' >> .buildpacks
 $ echo 'https://codon-buildpacks.s3.amazonaws.com/buildpacks/heroku/ruby.tgz' >> .buildpacks
 $ git add .buildpacks
 $ git commit -m 'Add multi-buildpack'
@@ -96,15 +116,12 @@ web: bin/start-nginx bundle exec unicorn -c config/unicorn.rb
 ```
 ```bash
 $ git add Procfile
-$ git commit -m 'Update procfile for NGINX buildpack'
+$ git commit -m 'Update Procfile for NGINX buildpack'
 ```
 Update Unicorn Config
 ```ruby
 require 'fileutils'
-listen '/tmp/nginx.socket'
-before_fork do |server,worker|
-	FileUtils.touch('/tmp/app-initialized')
-end
+listen ENV['PORT']
 ```
 ```bash
 $ git add config/unicorn.rb
@@ -115,7 +132,7 @@ Deploy Changes
 $ git push heroku master
 ```
 
-### New App
+### New Ruby/Unicorn App
 
 ```bash
 $ mkdir myapp; cd myapp
@@ -139,11 +156,7 @@ require 'fileutils'
 preload_app true
 timeout 5
 worker_processes 4
-listen '/tmp/nginx.socket', backlog: 1024
-
-before_fork do |server,worker|
-	FileUtils.touch('/tmp/app-initialized')
-end
+listen ENV['PORT'], backlog: 1024
 ```
 Install Gems
 ```bash
@@ -155,9 +168,9 @@ web: bin/start-nginx bundle exec unicorn -c config/unicorn.rb
 ```
 Create & Push Heroku App:
 ```bash
-$ heroku create --buildpack https://github.com/ddollar/heroku-buildpack-multi.git
+$ heroku create --buildpack https://github.com/agriffis/heroku-buildpack-multii.git
 $ echo 'https://codon-buildpacks.s3.amazonaws.com/buildpacks/heroku/ruby.tgz' >> .buildpacks
-$ echo 'https://github.com/ryandotsmith/nginx-buildpack.git' >> .buildpacks
+$ echo 'https://github.com/agriffis/nginx-buildpack.git' >> .buildpacks
 $ git add .
 $ git commit -am "init"
 $ git push heroku master
@@ -168,8 +181,14 @@ Visit App
 $ heroku open
 ```
 
-## License
-Copyright (c) 2013 Ryan R. Smith
+License
+-------
+
+* Copyright (c) 2013 Ryan R. Smith
+* Copyright (c) 2014 Aron Griffis
+
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
