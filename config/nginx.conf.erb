@@ -1,6 +1,6 @@
 daemon off;
 worker_processes <%= ENV['NGINX_WORKERS'] %>;
-
+pid /app/nginx.pid;
 error_log stderr;
 
 events {

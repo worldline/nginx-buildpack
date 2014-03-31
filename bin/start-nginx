@@ -36,6 +36,10 @@ run-nginx() {
         at app-initialized
     fi
 
+    # Create logs dir. NGINX insists on creating logs/error.log even
+    # though it will remain an empty file, with actual logging on stderr.
+    mkdir -p logs
+
     # Start NGINX. SIGQUIT for graceful shutdown.
     aux-start nginx SIGQUIT bin/nginx -p "$PWD" -c config/nginx.conf
 
