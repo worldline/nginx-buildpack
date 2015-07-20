@@ -147,6 +147,7 @@ set-vars() {
     : ${NGINX_WAIT_ENABLED:=1}
     : ${NGINX_WORKERS:=4}
     NGINX_GZIP_ENABLED=$(norm-enabled "${NGINX_GZIP_ENABLED:-1}")
+    : ${NGINX_GZIP_PROXIED:=any}
     NGINX_GZIP_TYPES=$(expand-types "${NGINX_GZIP_TYPES:-plain css javascript json xml atom+xml rss+xml}")
 
     if [[ $NGINX_SOCKET == /* ]]; then
