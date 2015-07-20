@@ -147,6 +147,7 @@ set-vars() {
     : ${NGINX_WAIT_ENABLED:=1}
     : ${NGINX_WORKERS:=4}
     NGINX_GZIP_ENABLED=$(norm-enabled "${NGINX_GZIP_ENABLED:-1}")
+    NGINX_GZIP_TYPES=$(expand-types "${NGINX_GZIP_TYPES:-plain css javascript json xml atom+xml rss+xml}")
 
     if [[ $NGINX_SOCKET == /* ]]; then
         NGINX_SOCKET=unix:$NGINX_SOCKET
@@ -156,6 +157,21 @@ set-vars() {
     PORT=$NGINX_SOCKET
 
     export ${!NGINX_*} PORT
+}
+
+expand-types() {
+    declare -a types
+    declare t
+
+    for t in $*; do
+        if [[ $t == */* ]]; then
+            types+=( $t )
+        else
+            types+=( {application,text}/{,x-}$t )
+        fi
+    done
+
+    echo ${types[*]}
 }
 
 at() {
