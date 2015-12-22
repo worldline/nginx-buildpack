@@ -16,8 +16,10 @@ run-nginx() {
 
     set-vars
 
-    # Evaluate config to get $PORT
-    erb config/nginx.conf.erb > config/nginx.conf
+    # Evaluate configs to get $PORT
+    for c in config/*.conf.erb; do
+        erb $c > ${c%.erb}
+    done
 
     # Use named pipe to detect exit of any subprocess.
     rm -f "$psmgr"
