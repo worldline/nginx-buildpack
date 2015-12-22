@@ -45,5 +45,6 @@ http {
         }
     }
 
-    include config/nginx-local*.conf;
+    # relative to location of nginx.conf
+    include nginx-local*.conf;
 }
