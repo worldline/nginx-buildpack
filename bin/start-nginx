@@ -3,7 +3,8 @@
 main() {
     if ! is-enabled "${NGINX_ENABLED:-1}"; then
         at nginx-disabled
-        exec "$@"
+        # Add heroku port to play exec instruction
+        exec "$@" "-Dhttp.port=$PORT"
     fi
 
     at nginx-enabled
@@ -15,11 +16,17 @@ run-nginx() {
     declare -A pids signals
 
     set-vars
+    display-vars
 
     # Evaluate configs to get $PORT
     for c in config/*.conf.erb; do
         erb $c > ${c%.erb}
     done
+
+    at "nginx config (buildpack) ="
+    cat config/nginx.conf
+    at "nginx config (application) ="
+    cat config/nginx-local.conf
 
     # Use named pipe to detect exit of any subprocess.
     rm -f "$psmgr"
@@ -29,9 +36,9 @@ run-nginx() {
     app-start SIGTERM "$@"
     pid=$!
 
-    # Wait for app to start.
+    # Wait for app to start by checking if application port is open.
     if is-enabled "$NGINX_WAIT_ENABLED"; then
-        while [[ ! -e "$NGINX_WAIT_FILE" ]]; do
+        until nc -z 127.0.0.1 $PORT; do
             at app-waiting
             sleep 1
         done
@@ -90,7 +97,7 @@ app-start() {
         # Start child in the background. This is before the trap because
         # the app needs to be able to receive when the dyno broadcasts
         # SIGTERM on shutdown.
-        "$@" &
+        "$@" "-Dhttp.port=$PORT" &
 
         # Translate SIGHUP/SIGTERM to the appropriate signal to stop the child
         # (probably SIGTERM in this case). Since this doesn't exit, it won't
@@ -144,22 +151,26 @@ aux-start() {
 set-vars() {
     : ${NGINX_ENABLED:=1}
     : ${NGINX_LISTEN:=$PORT}
-    : ${NGINX_SOCKET:=/tmp/nginx.socket}
-    : ${NGINX_WAIT_FILE:=$NGINX_SOCKET}
+    : ${NGINX_APP_PORT:=9000}
     : ${NGINX_WAIT_ENABLED:=1}
     : ${NGINX_WORKERS:=4}
     NGINX_GZIP_ENABLED=$(norm-enabled "${NGINX_GZIP_ENABLED:-1}")
     : ${NGINX_GZIP_PROXIED:=any}
     NGINX_GZIP_TYPES=$(expand-types "${NGINX_GZIP_TYPES:-plain css javascript json xml atom+xml rss+xml}")
 
-    if [[ $NGINX_SOCKET == /* ]]; then
-        NGINX_SOCKET=unix:$NGINX_SOCKET
-    fi
-
     # Override $PORT for the app
-    PORT=$NGINX_SOCKET
+    PORT=$NGINX_APP_PORT
 
     export ${!NGINX_*} PORT
+}
+
+display-vars() {
+    at "environment variables ="
+    echo "NGINX_ENABLED: $NGINX_ENABLED"
+    echo "NGINX_LISTEN: $NGINX_LISTEN"
+    echo "NGINX_APP_PORT: $NGINX_APP_PORT"
+    echo "NGINX_WAIT_ENABLED: $NGINX_WAIT_ENABLED"
+    echo "PORT: $PORT"
 }
 
 expand-types() {

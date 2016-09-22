@@ -1,7 +1,7 @@
-Heroku Buildpack: NGINX
-=======================
+Heroku Buildpack: NGINX for WL Payment Acceptance Portal
+========================================================
 
-Nginx-buildpack vendors NGINX inside a dyno and connects NGINX to an app server via UNIX domain sockets.
+Nginx-buildpack vendors NGINX inside a dyno and connects NGINX to a Play/Scala app server.
 
 This buildpack forks [Ryan Smith's excellent buildpack](https://github.com/ryandotsmith/nginx-buildpack) and maintains his feature list:
 
@@ -29,12 +29,6 @@ Versions
 
 These versions are tunable by setting `NGINX_VERSION`, `NGINX_PCRE_VERSION` and `NGINX_HEADERS_MORE_VERSION` in the app config, so you can update even if the buildpack hasn't bee updated yet.
 
-Requirements
-------------
-
-* Your webserver listens to the socket at `/tmp/nginx.socket`.
-* You can start your web server with a shell command.
-
 Logging
 -------
 
@@ -50,21 +44,33 @@ You can correlate this id with your Heroku router logs:
 at=info method=GET path=/ host=salty-earth-7125.herokuapp.com request_id=e2c79e86b3260b9c703756ec93f8a66d fwd="67.180.77.184" dyno=web.1 connect=1ms service=8ms status=200 bytes=21
 ```
 
-Language/App Server Agnostic
-----------------------------
+Using the buildpack
+-------------------
+
+Add the buildpack to Heroku
+
+```bash
+$ heroku buildpacks:add --index 1 https://github.com/worldline/wl-sips-portal-nginx-buildpack.git
+```
+
+Play application usage
+----------------------
 
 Nginx-buildpack provides a command named `bin/start-nginx` this command takes another command as an argument. You must pass your app server's startup command to `start-nginx`.
 
-For example, to get NGINX and Unicorn up and running:
+#### Update Procfile
 
-```bash
-$ cat Procfile
-web: bin/start-nginx bundle exec unicorn -c config/unicorn.rb
+Prefix your server with `bin/start-nginx`.
+
 ```
+web: bin/start-nginx target/universal/stage/bin/wl-sips-portal
+```
+
+The start script will automatically set the internal application port based on the `NGINX_APP_PORT` environment variable (default 9000).
 
 ### Application/Dyno coordination
 
-The buildpack will not start NGINX until the application is listening on `/tmp/nginx-socket`. Since NGINX binds to the dyno's `PORT` and since the `PORT` determines if the app can receive traffic, you can delay NGINX accepting traffic until your application is ready to handle it. The examples below show how/when you should write the file when working with Unicorn.
+The buildpack will not start NGINX until the application is listening on `NGINX_APP_PORT`. Since NGINX binds to the dyno's `PORT` and since the `PORT` determines if the app can receive traffic, you can delay NGINX accepting traffic until your application is ready to handle it. The examples below show how/when you should write the file when working with Unicorn.
 
 ### Setting the Worker Processes
 
@@ -79,9 +85,9 @@ $ heroku config:set NGINX_WORKERS=8
 Customizable NGINX Config
 -------------------------
 
-You can provide your own NGINX config by creating a file named `config/nginx.conf.erb` in your app. Start by copying the buildpack's [default config file](https://raw.githubusercontent.com/agriffis/nginx-buildpack/develop/config/nginx.conf.erb).
+Default configuration is set in the buildpack.
 
-Alternatively, if you like the defaults, you can add a file `config/nginx-local.conf` and it will be included automatically.
+Additional configuration is set by add a file `config/nginx-local.conf` to the main application project and it will be included automatically.
 
 ### Patched Logging
 
@@ -96,74 +102,6 @@ http {
 ```
 
 This instructs NGINX to send the error log to stderr (this is provided by NGINX upstream) and then to send the access log to the error log output (this is provided by the patch).
-
-Examples
---------
-
-### Ruby/Unicorn
-
-#### Update Buildpacks
-
-Use [heroku-buildpack-multii](https://github.com/agriffis/heroku-buildpack-multii) to load nginx-buildpack in addition to the Ruby buildpack.
-
-```bash
-$ heroku config:set BUILDPACK_URL=https://github.com/agriffis/heroku-buildpack-multii.git
-$ echo 'https://github.com/agriffis/nginx-buildpack.git' >> .buildpacks
-$ echo 'https://codon-buildpacks.s3.amazonaws.com/buildpacks/heroku/ruby.tgz' >> .buildpacks
-$ git add .buildpacks
-$ git commit -m 'Add multi-buildpack'
-```
-
-#### Update Unicorn Config
-
-Listen on `ENV['PORT']` which will be the UNIX domain socket when running under NGINX.
-
-```ruby
-listen ENV['PORT']
-```
-
-#### Update Procfile
-
-Prefix your server with `bin/start-nginx`.
-
-```
-web: bin/start-nginx bundle exec unicorn -c config/unicorn.rb
-```
-
-### Python/Gunicorn
-
-#### Update Buildpacks
-
-Use [heroku-buildpack-multii](https://github.com/agriffis/heroku-buildpack-multii) to load nginx-buildpack in addition to the Python buildpack.
-
-```bash
-$ heroku config:set BUILDPACK_URL=https://github.com/agriffis/heroku-buildpack-multii.git
-$ echo 'https://github.com/agriffis/nginx-buildpack.git' >> .buildpacks
-$ echo 'https://github.com/heroku/heroku-buildpack-python.git' >> .buildpacks
-$ git add .buildpacks
-$ git commit -m 'Add multi-buildpack'
-```
-
-#### Update Gunicorn Config
-
-Check for the UNIX domain socket and prefix with `unix:` for Gunicorn in `config/gunicorn.py`.
-
-```python
-import os
-
-bind = os.environ['PORT']
-
-if bind.startswith('/'):
-    bind = 'unix:' + bind
-```
-
-#### Update Procfile
-
-Prefix your server with `bin/start-nginx`.
-
-```
-web: bin/start-nginx gunicorn -c config/gunicorn.py
-```
 
 License
 -------
